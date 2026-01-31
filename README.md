@@ -14,7 +14,7 @@ Download and add ecs.zig as a dependency by running the following command in you
 zig fetch --save git+https://github.com/tu7q/zecs/
 ```
 
-Then add ecs.zig as a dependency and import its modules in your `build.zig`:
+Then add zecs as a dependency and import its modules in your `build.zig`:
 
 ```zig
 const zecs = b.dependency("zecs", .{
