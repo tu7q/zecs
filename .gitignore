@@ -1,0 +1,3 @@
+docs/
+zig-out/
+.zig-cache/
