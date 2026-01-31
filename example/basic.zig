@@ -60,6 +60,7 @@ pub fn main() anyerror!void {
 
     // And we can see that the entity id is no longer useable.
     std.debug.print("{any}\n", .{tables.isAlive(entity_id)});
+    std.debug.assert(!tables.isAlive(entity_id));
 }
 
 const std = @import("std");

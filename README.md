@@ -1,4 +1,4 @@
-# zecs.zig
+# zecs
 
 ## An Entity Component System
 
@@ -11,13 +11,13 @@ This projects uses zig 0.15.2
 
 Download and add ecs.zig as a dependency by running the following command in your project root:
 ```
-zig fetch --save git+https://github.com/tu7q/zecs.zig/
+zig fetch --save git+https://github.com/tu7q/zecs/
 ```
 
 Then add ecs.zig as a dependency and import its modules in your `build.zig`:
 
 ```zig
-const zecs = b.dependency("zecs.zig", .{
+const zecs = b.dependency("zecs", .{
 	.target=target,
 	.optimize=optimize,
 });
