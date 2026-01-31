@@ -2,14 +2,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const zecs_mod = b.createModule(.{
+    const zecs = b.addModule("zecs", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     const test_step = b.step("test", "Run unit tests");
-    const tests = b.addTest(.{ .root_module = zecs_mod });
+    const tests = b.addTest(.{ .root_module = zecs });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
 
@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(b.fmt("example/{s}.zig", .{example_name})),
                 .target = target,
                 .optimize = optimize,
-                .imports = &.{.{ .name = "zecs", .module = zecs_mod }},
+                .imports = &.{.{ .name = "zecs", .module = zecs }},
             }),
         });
         const install_example = b.addInstallArtifact(example, .{});

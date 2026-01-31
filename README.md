@@ -21,7 +21,7 @@ const zecs = b.dependency("zecs", .{
 	.target=target,
 	.optimize=optimize,
 });
-exe.root_module.addImport("zecs", zecs.module("zecs");
+exe.root_module.addImport("zecs", zecs.module("zecs"));
 ```
 
 Then import it with `const zecs = @import("zecs");` and build as normal with `zig build`.
