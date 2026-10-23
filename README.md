@@ -2,7 +2,7 @@
 
 ## An Entity Component System
 
-This projects uses zig 0.15.2
+This projects uses zig 0.17.0
 
 ### Status
 **Immature**
@@ -34,6 +34,7 @@ Then import it with `const zecs = @import("zecs");` and build as normal with `zi
  - Cleaner column usage/reducing required column information.
  - Better Query/Iteration API
  - Use something like https://osebje.famnit.upr.si/~savnik/papers/cdares13.pdf for faster iteration.
+ - Implement benchmarking to examine performance regressions.
 
 
 <!-- DOCUMENTATION -->

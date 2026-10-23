@@ -23,10 +23,9 @@ pub inline fn typeId(comptime T: type) TypeId {
 pub const ArchetypeIndex = enum(u32) { _ };
 pub const Archetype = set.Sorted(ComponentId, struct {
     pub fn compare(_: @This(), a: ComponentId, b: ComponentId) std.math.Order {
-        return std.math.order(@intFromEnum(a), @intFromEnum(b));
+        return std.math.order(@backingInt(a), @backingInt(b));
     }
 });
-pub const ArchetypeManaged = set.AutoSortedManaged(ComponentId);
 pub const ArchetypeContext = struct {
     pub fn eql(ctx: ArchetypeContext, a: Archetype, b: Archetype, _: usize) bool {
         _ = ctx;
@@ -59,7 +58,7 @@ pub const ComponentId = enum(usize) {
     _,
 
     pub fn order(a: ComponentId, b: ComponentId) std.math.Order {
-        return std.math.order(@intFromEnum(a), @intFromEnum(b));
+        return std.math.order(@backingInt(a), @backingInt(b));
     }
 };
 
@@ -347,7 +346,7 @@ pub const Tables = struct {
 
     fn rawRegisterComponent(self: *Tables, gpa: Allocator, descriptor: ComponentDescriptor) Oom!ComponentId {
         try self.components.append(gpa, descriptor);
-        return @enumFromInt(self.components.items.len - 1);
+        return @fromBackingInt(@intCast(self.components.items.len - 1));
     }
 
     fn getComponentId(self: Tables, C: type) ?ComponentId {
@@ -392,7 +391,7 @@ pub const Tables = struct {
         try table.components.ensureTotalCapacity(gpa, archetype.items.len);
 
         for (archetype.items) |cid| {
-            const descriptor = self.components.items[@intFromEnum(cid)];
+            const descriptor = self.components.items[@backingInt(cid)];
             table.components.putNoClobber(gpa, cid, .initDescriptor(descriptor)) catch unreachable;
         }
     }
@@ -413,7 +412,7 @@ pub const Tables = struct {
             try self.initTable(gpa, archetype, entry.value_ptr);
         }
 
-        return @enumFromInt(entry.index);
+        return @fromBackingInt(@intCast(entry.index));
     }
 
     // Takes ownership of the archetype passed in.
@@ -433,7 +432,7 @@ pub const Tables = struct {
             @constCast(&archetype).deinit(gpa);
         }
 
-        return @enumFromInt(entry.index);
+        return @fromBackingInt(@intCast(entry.index));
     }
 
     /// Asserts that the entity exists.
@@ -445,12 +444,12 @@ pub const Tables = struct {
 
     /// Asserts that the entity exists.
     fn getEntityTable(self: Tables, entity_id: EntityId) *Table {
-        return &self.tables.values()[@intFromEnum(self.getEntityLocation(entity_id).aid)];
+        return &self.tables.values()[@backingInt(self.getEntityLocation(entity_id).aid)];
     }
 
     /// Asserts that the entity exists.
     fn getEntityArchetype(self: Tables, entity_id: EntityId) *Archetype {
-        return &self.tables.keys()[@intFromEnum(self.getEntityLocation(entity_id).aid)];
+        return &self.tables.keys()[@backingInt(self.getEntityLocation(entity_id).aid)];
     }
 
     fn moveEntity(
@@ -459,8 +458,8 @@ pub const Tables = struct {
         eloc: *EntityLocation,
         dst_aid: ArchetypeIndex,
     ) Oom!void {
-        const src = &self.tables.values()[@intFromEnum(eloc.aid)];
-        const dst = &self.tables.values()[@intFromEnum(dst_aid)];
+        const src = &self.tables.values()[@backingInt(eloc.aid)];
+        const dst = &self.tables.values()[@backingInt(dst_aid)];
 
         // Copy entity from `src` into `dst`
         try dst.copy(gpa, src, eloc.row);
@@ -480,7 +479,7 @@ pub const Tables = struct {
     /// Spawns an entity with no components.
     pub fn spawn(self: *Tables, gpa: Allocator) Oom!EntityId {
         const aid = try self.ensureArchetypeExists(gpa, .empty);
-        const table = &self.tables.values()[@intFromEnum(aid)];
+        const table = &self.tables.values()[@backingInt(aid)];
 
         const entity_id = try self.prepareNextEntitySlot(gpa, .{
             .aid = aid,
@@ -502,23 +501,24 @@ pub const Tables = struct {
             @compileError("Expected a struct found: " ++ @typeName(@TypeOf(components)));
         }
 
-        const fields = set_info.@"struct".fields;
+        const field_types = set_info.@"struct".field_types;
+        const field_names = set_info.@"struct".field_names;
 
-        var cids: [fields.len]ComponentId = undefined;
-        inline for (fields, &cids) |field, *cid| {
-            cid.* = self.getComponentId(field.type).?;
+        var cids: [field_names.len]ComponentId = undefined;
+        inline for (field_types, &cids) |field_type, *cid| {
+            cid.* = self.getComponentId(field_type).?;
         }
 
         // Duplicate `cids` to avoid clobbering such that it remains
         //  parallel with `fields`.
-        var cids_sorted: [fields.len]ComponentId = cids;
+        var cids_sorted: [field_names.len]ComponentId = cids;
 
         // Archetype that exists in stack memory.
         const archetype = Archetype.initUnsorted(&cids_sorted);
 
         // Clones archetype if it doesn't exist.
         const aid = try self.ensureUnownedArchetypeExists(gpa, archetype);
-        const table = &self.tables.values()[@intFromEnum(aid)];
+        const table = &self.tables.values()[@backingInt(aid)];
 
         const entity_id = try self.prepareNextEntitySlot(gpa, .{
             .aid = aid,
@@ -527,8 +527,8 @@ pub const Tables = struct {
         errdefer self.freeEntitySlot(entity_id.idx);
 
         try table.addOne(gpa, entity_id);
-        inline for (fields, cids) |field, cid| {
-            self.erasedSetComponentOnEntity(entity_id, cid, &std.mem.toBytes(@field(components, field.name)));
+        inline for (field_names, cids) |field_name, cid| {
+            self.erasedSetComponentOnEntity(entity_id, cid, &std.mem.toBytes(@field(components, field_name)));
         }
 
         return entity_id;
@@ -541,7 +541,7 @@ pub const Tables = struct {
         if (entity_entry.egen != entity_id.gen) return;
 
         const eloc = entity_entry.data.eloc;
-        const table = &self.tables.values()[@intFromEnum(eloc.aid)];
+        const table = &self.tables.values()[@backingInt(eloc.aid)];
 
         const swapped = table.count - 1;
         table.swapRemove(eloc.row);
@@ -586,7 +586,7 @@ pub const Tables = struct {
     ) Oom!void {
         const eloc = self.getEntityLocation(entity_id);
 
-        const archetype = self.tables.keys()[@intFromEnum(eloc.aid)];
+        const archetype = self.tables.keys()[@backingInt(eloc.aid)];
 
         // Entity doesn't have component.
         if (!archetype.contains(component_id)) return;
@@ -723,13 +723,14 @@ pub const Tables = struct {
     ) ?*anyopaque {
         const loc = self.getEntityLocation(entity_id);
 
-        const table = self.tables.values()[@intFromEnum(loc.aid)];
+        const table = self.tables.values()[@backingInt(loc.aid)];
         const column = table.getColumn(component_id) orelse return null;
         return column.getItemPtr(loc.row);
     }
 
     pub fn Slice(Components: type) type {
-        const fields = std.meta.fields(Components);
+        // NOTE: Migration from 0.15.2 to 0.17.0, assuming struct fields for now.
+        const fields = @typeInfo(Components).@"struct".field_names;
         const Field = std.meta.FieldEnum(Components);
 
         return struct {
@@ -749,7 +750,7 @@ pub const Tables = struct {
 
             pub fn items(self: Self, comptime field: Field) []FieldType(field) {
                 const F = FieldType(field);
-                const byte_ptr = self.ptrs[@intFromEnum(field)];
+                const byte_ptr = self.ptrs[@backingInt(field)];
                 const casted_ptr: [*]F = if (@sizeOf(F) == 0) undefined else @ptrCast(@alignCast(byte_ptr));
                 return casted_ptr[0..self.len];
             }
@@ -757,7 +758,8 @@ pub const Tables = struct {
     }
 
     pub fn Iterator(Components: type) type {
-        const fields = std.meta.fields(Components);
+        // NOTE: Migration from 0.15.2 to 0.17.0, assuming struct fields for now.
+        const fields = @typeInfo(Components).@"struct".field_names;
 
         return struct {
             component_ids: [fields.len]ComponentId,
@@ -793,11 +795,12 @@ pub const Tables = struct {
     }
 
     pub fn iterator(self: Tables, Components: type) Iterator(Components) {
-        const fields = std.meta.fields(Components);
+        // NOTE: Migration from 0.15.2 to 0.17.0, assuming struct fields for now.
+        const fields = @typeInfo(Components).@"struct".field_types;
 
         var ids: [fields.len]ComponentId = undefined;
-        inline for (&ids, fields) |*id, f| {
-            id.* = self.getComponentId(f.type).?;
+        inline for (&ids, fields) |*id, field_type| {
+            id.* = self.getComponentId(field_type).?;
         }
 
         return .{

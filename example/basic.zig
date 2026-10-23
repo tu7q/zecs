@@ -1,8 +1,5 @@
-pub fn main() anyerror!void {
-    // Standard allocator stuff.
-    var da_impl = std.heap.DebugAllocator(.{}){};
-    defer std.debug.assert(da_impl.deinit() == .ok);
-    const gpa = da_impl.allocator();
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
 
     // Create the tables for the ecs.
     // Whenever an argument requires an allocator we must use the same allocator.
