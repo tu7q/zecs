@@ -6,19 +6,20 @@ const Oom = Allocator.Error;
 
 const set = @import("set.zig");
 
-// https://github.com/ziglang/zig/issues/19858#issuecomment-2369861301
-const TypeId = *const struct {
-    _: u8,
-};
+// Currently uneeded.
+// // https://github.com/ziglang/zig/issues/19858#issuecomment-2369861301
+// const TypeId = *const struct {
+//     _: u8,
+// };
 
-pub inline fn typeId(comptime T: type) TypeId {
-    return &struct {
-        comptime {
-            _ = T;
-        }
-        var id: @typeInfo(TypeId).pointer.child = undefined;
-    }.id;
-}
+// pub inline fn typeId(comptime T: type) TypeId {
+//     return &struct {
+//         comptime {
+//             _ = T;
+//         }
+//         var id: @typeInfo(TypeId).pointer.child = undefined;
+//     }.id;
+// }
 
 pub const ArchetypeIndex = enum(u32) { _ };
 pub const Archetype = set.Sorted(ComponentId, struct {
@@ -284,8 +285,8 @@ pub const Table = struct {
 };
 
 pub const Tables = struct {
-    /// A mapping from TypeId to ComponentId.
-    type_to_component: std.AutoArrayHashMapUnmanaged(TypeId, ComponentId),
+    /// A mapping from component names to ComponentId
+    name_to_component: std.StringArrayHashMapUnmanaged(ComponentId),
     /// Mapping of component id to component descriptors.
     components: std.ArrayList(ComponentDescriptor),
     /// The next free entry into the entities list.
@@ -311,7 +312,7 @@ pub const Tables = struct {
     };
 
     pub const empty: Tables = .{
-        .type_to_component = .empty,
+        .name_to_component = .empty,
         .components = .empty,
         .next_free_entry = null,
         .entities = .empty,
@@ -320,7 +321,7 @@ pub const Tables = struct {
 
     /// Free the memory associated with `self`.
     pub fn deinit(self: *Tables, gpa: Allocator) void {
-        self.type_to_component.deinit(gpa);
+        self.name_to_component.deinit(gpa);
         self.components.deinit(gpa);
         for (self.tables.keys(), self.tables.values()) |*arch, *table| {
             arch.deinit(gpa);
@@ -333,8 +334,9 @@ pub const Tables = struct {
 
     /// Register a component with `self`.
     pub fn registerComponent(self: *Tables, gpa: Allocator, C: type) Oom!ComponentId {
-        const type_entry = try self.type_to_component.getOrPut(gpa, typeId(C));
-        errdefer _ = self.type_to_component.swapRemove(typeId(C));
+        // const type_entry = try self.name_to_component.getOrPut(gpa, typeId(C));
+        const type_entry = try self.name_to_component.getOrPut(gpa, @typeName(C));
+        errdefer _ = self.name_to_component.swapRemove(@typeName(C));
 
         if (type_entry.found_existing) return type_entry.value_ptr.*;
 
@@ -350,7 +352,7 @@ pub const Tables = struct {
     }
 
     fn getComponentId(self: Tables, C: type) ?ComponentId {
-        return self.type_to_component.get(typeId(C));
+        return self.name_to_component.get(@typeName(C));
     }
 
     fn prepareNextEntitySlot(
