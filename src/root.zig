@@ -64,6 +64,7 @@ pub const ComponentId = enum(usize) {
 };
 
 pub const ComponentDescriptor = struct {
+    // NOTE: Might be better to store a name hash rather than the actual name.
     name: []const u8,
     alignment: std.mem.Alignment,
     size: usize,
@@ -285,10 +286,11 @@ pub const Table = struct {
 };
 
 pub const Tables = struct {
-    /// A mapping from component names to ComponentId
-    name_to_component: std.StringArrayHashMapUnmanaged(ComponentId),
-    /// Mapping of component id to component descriptors.
-    components: std.ArrayList(ComponentDescriptor),
+    /// A mapping from component names to a ComponentDescriptor
+    ///        Also maps a ComponentId to a ComponentDescriptor
+    /// The backing memory of the ComponentDescriptor name is not copied and must
+    /// remain valid while the Tables struct is in use.
+    components: std.StringArrayHashMapUnmanaged(ComponentDescriptor),
     /// The next free entry into the entities list.
     next_free_entry: ?EntityIndex = null,
     /// List of entities.
@@ -312,7 +314,6 @@ pub const Tables = struct {
     };
 
     pub const empty: Tables = .{
-        .name_to_component = .empty,
         .components = .empty,
         .next_free_entry = null,
         .entities = .empty,
@@ -321,7 +322,6 @@ pub const Tables = struct {
 
     /// Free the memory associated with `self`.
     pub fn deinit(self: *Tables, gpa: Allocator) void {
-        self.name_to_component.deinit(gpa);
         self.components.deinit(gpa);
         for (self.tables.keys(), self.tables.values()) |*arch, *table| {
             arch.deinit(gpa);
@@ -333,26 +333,32 @@ pub const Tables = struct {
     }
 
     /// Register a component with `self`.
+    /// If a component with the same name is already registered its id
+    /// is returned instead. This is likely to change.
     pub fn registerComponent(self: *Tables, gpa: Allocator, C: type) Oom!ComponentId {
-        // const type_entry = try self.name_to_component.getOrPut(gpa, typeId(C));
-        const type_entry = try self.name_to_component.getOrPut(gpa, @typeName(C));
-        errdefer _ = self.name_to_component.swapRemove(@typeName(C));
-
-        if (type_entry.found_existing) return type_entry.value_ptr.*;
-
-        const component_id = try self.rawRegisterComponent(gpa, .of(C));
-        type_entry.value_ptr.* = component_id;
-
-        return component_id;
+        return self.erasedRegisterComponent(gpa, .of(C));
     }
 
-    fn rawRegisterComponent(self: *Tables, gpa: Allocator, descriptor: ComponentDescriptor) Oom!ComponentId {
-        try self.components.append(gpa, descriptor);
-        return @fromBackingInt(@intCast(self.components.items.len - 1));
+    /// Same semantics as registerComponent
+    pub fn erasedRegisterComponent(self: *Tables, gpa: Allocator, descriptor: ComponentDescriptor) Oom!ComponentId {
+        const entry = try self.components.getOrPut(gpa, descriptor.name);
+        if (entry.found_existing) return @fromBackingInt(entry.index);
+
+        entry.value_ptr.* = descriptor;
+        return @fromBackingInt(entry.index);
     }
 
-    fn getComponentId(self: Tables, C: type) ?ComponentId {
-        return self.name_to_component.get(@typeName(C));
+    pub fn getComponentId(self: Tables, C: type) ?ComponentId {
+        return self.erasedGetComponentId(@typeName(C));
+    }
+
+    pub fn erasedGetComponentId(self: Tables, component_name: []const u8) ?ComponentId {
+        const index = self.components.getIndex(component_name) orelse return null;
+        return @fromBackingInt(index);
+    }
+
+    fn getDescriptorPtr(self: Tables, component_id: ComponentId) *const ComponentDescriptor {
+        return &self.components.values()[@backingInt(component_id)];
     }
 
     fn prepareNextEntitySlot(
@@ -393,8 +399,8 @@ pub const Tables = struct {
         try table.components.ensureTotalCapacity(gpa, archetype.items.len);
 
         for (archetype.items) |cid| {
-            const descriptor = self.components.items[@backingInt(cid)];
-            table.components.putNoClobber(gpa, cid, .initDescriptor(descriptor)) catch unreachable;
+            const descriptor = self.getDescriptorPtr(cid);
+            table.components.putNoClobber(gpa, cid, .initDescriptor(descriptor.*)) catch unreachable;
         }
     }
 
@@ -530,7 +536,8 @@ pub const Tables = struct {
 
         try table.addOne(gpa, entity_id);
         inline for (field_names, cids) |field_name, cid| {
-            self.erasedSetComponentOnEntity(entity_id, cid, &std.mem.toBytes(@field(components, field_name)));
+            const field = @field(components, field_name);
+            self.erasedSetComponentOnEntity(entity_id, cid, std.mem.asBytes(&field));
         }
 
         return entity_id;
@@ -698,6 +705,12 @@ pub const Tables = struct {
     ) void {
         const eloc = self.getEntityLocation(entity_id);
         const table = self.getEntityTable(entity_id);
+
+        // Asserts that the component is aligned to its component descriptor
+        assert(std.mem.Alignment.check(
+            self.getDescriptorPtr(component_id).alignment,
+            @intFromPtr(component.ptr),
+        ));
 
         // Asserts that the table exists.
         const column = table.getColumnPtr(component_id).?;

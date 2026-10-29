@@ -28,6 +28,7 @@ Then import it with `const zecs = @import("zecs");` and build as normal with `zi
 
 <!-- TODOS -->
 ## TODOS
+ - Tests
  - Using something like a german string for the Archetypes to store some ComponentId on the stack.
  - Using a graph structure to follow edges between archetypes.
  - API to allow inserting/getting multiple elements at once
